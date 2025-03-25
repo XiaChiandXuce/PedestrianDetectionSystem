@@ -102,6 +102,7 @@ class PedestrianDetectionUI(QWidget):
         self.use_camera_btn = QPushButton("使用摄像头")
         self.start_detection_btn = QPushButton("启动检测")
         self.pause_detection_btn = QPushButton("暂停检测")
+        self.view_logs_btn = QPushButton("查看日志")
         self.exit_btn = QPushButton("退出")
 
         button_layout = QHBoxLayout()
@@ -109,6 +110,7 @@ class PedestrianDetectionUI(QWidget):
         button_layout.addWidget(self.use_camera_btn)
         button_layout.addWidget(self.start_detection_btn)
         button_layout.addWidget(self.pause_detection_btn)
+        button_layout.addWidget(self.view_logs_btn)  # ✅ 新增
         button_layout.addWidget(self.exit_btn)
 
         # 3. 参数调节
@@ -150,6 +152,7 @@ class PedestrianDetectionUI(QWidget):
         self.use_camera_btn.clicked.connect(self.use_camera)
         self.start_detection_btn.clicked.connect(self.start_detection)
         self.pause_detection_btn.clicked.connect(self.pause_detection)
+        self.view_logs_btn.clicked.connect(self.view_logs)  # ✅ 新增
         self.exit_btn.clicked.connect(self.close_app)
 
     def update_video_frame(self, img):
@@ -210,6 +213,32 @@ class PedestrianDetectionUI(QWidget):
         if self.video_thread.isRunning():
             self.video_thread.stop()
             self.status_bar.showMessage("行人检测已暂停")
+
+    def view_logs(self):
+        import os
+        import platform
+        import subprocess
+        from PyQt6.QtWidgets import QMessageBox
+
+        logs_path = self.log_manager.log_dir  # ✅ 直接使用 LogManager 的路径
+        print("【查看日志】目标日志目录为：", logs_path)
+
+        if not os.path.exists(logs_path):
+            QMessageBox.warning(self, "提示", "当前没有日志文件可查看！")
+            print("❌ 日志目录不存在！")
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(logs_path)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", logs_path])
+            else:
+                subprocess.Popen(["xdg-open", logs_path])
+            print("✅ 已尝试打开日志目录。")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"无法打开日志文件夹：{str(e)}")
+            print("❌ 打开文件夹失败：", str(e))
 
     def close_app(self):
         """ 退出应用 """
