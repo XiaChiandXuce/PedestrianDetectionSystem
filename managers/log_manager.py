@@ -5,13 +5,26 @@ import csv
 from datetime import datetime
 
 class LogManager:
-    def __init__(self, log_dir="logs"):
+    def __init__(self, log_dir=None):
         """
-        初始化日志管理器，确保日志目录存在
+        初始化日志管理器，确保日志目录在项目根目录 logs/
         """
-        self.log_dir = os.path.abspath(log_dir)  # 统一路径格式
-        os.makedirs(self.log_dir, exist_ok=True)  # 如果路径不存在则创建
-        print(f"[LogManager] 初始化成功，日志将保存到：{self.log_dir}")  # ✅ 新增：帮助调试
+        # 1. 获取当前文件（log_manager.py）的目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # 2. 假设当前文件在 managers/，向上返回到项目根目录
+        project_root = os.path.abspath(os.path.join(current_dir, ".."))
+
+        # 3. 默认日志目录设为 根目录/logs
+        default_log_dir = os.path.join(project_root, "logs")
+
+        # 4. 支持用户自定义路径，否则用默认
+        self.log_dir = os.path.abspath(log_dir) if log_dir else default_log_dir
+
+        # 5. 创建目录
+        os.makedirs(self.log_dir, exist_ok=True)
+
+        print(f"[LogManager] 初始化成功，日志将保存到：{self.log_dir}")
 
     def _get_log_path(self):
         """
@@ -30,9 +43,11 @@ class LogManager:
         with open(log_path, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if is_new_file:
-                # ✅ 新增：中文表头，清晰可读
                 writer.writerow(["时间", "事件类型", "边界框", "置信度", "目标类别"])
             writer.writerow(row)
+
+        # ✅ 打印真实路径（可选调试用）
+        print(f"[LogManager] ✅ 当前写入文件为：{log_path}")
 
     def log_detection(self, bbox, confidence, class_name):
         """
