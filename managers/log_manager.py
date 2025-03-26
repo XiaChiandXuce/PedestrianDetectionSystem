@@ -26,12 +26,14 @@ class LogManager:
 
         print(f"[LogManager] 初始化成功，日志将保存到：{self.log_dir}")
 
+        # ✅ 提前初始化 current_log_path
+        self.current_log_path = self._get_log_path()
+
     def _get_log_path(self):
-        """
-        根据当前日期返回日志文件路径，例如 log_2025-03-24.csv
-        """
         date_str = datetime.now().strftime("%Y-%m-%d")
-        return os.path.join(self.log_dir, f"log_{date_str}.csv")
+        path = os.path.join(self.log_dir, f"log_{date_str}.csv")
+        self.current_log_path = path  # ✅ 缓存一份
+        return path
 
     def _write_row(self, row):
         """
@@ -57,6 +59,9 @@ class LogManager:
         row = [timestamp, "检测", str(bbox), round(confidence, 3), class_name]
         self._write_row(row)
         print(f"[LogManager] ✅ 检测记录已写入")
+
+    def get_latest_log_path(self):
+        return self.current_log_path
 
     def log_alert(self, bbox, confidence, class_name):
         """

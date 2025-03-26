@@ -1,5 +1,6 @@
 import sys
 import cv2
+import os
 import numpy as np
 from detection.detector import YOLOv8Detector
 from PyQt6.QtCore import QDateTime
@@ -9,7 +10,7 @@ from PyQt6.QtCore import QUrl
 from managers.sound_manager import SoundManager
 from managers.alert_manager import AlertManager
 from managers.log_manager import LogManager
-
+from ui.log_viewer import LogViewerWindow
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout,
@@ -215,30 +216,18 @@ class PedestrianDetectionUI(QWidget):
             self.status_bar.showMessage("行人检测已暂停")
 
     def view_logs(self):
-        import os
-        import platform
-        import subprocess
-        from PyQt6.QtWidgets import QMessageBox
-
-        logs_path = self.log_manager.log_dir  # ✅ 直接使用 LogManager 的路径
-        print("【查看日志】目标日志目录为：", logs_path)
-
-        if not os.path.exists(logs_path):
-            QMessageBox.warning(self, "提示", "当前没有日志文件可查看！")
-            print("❌ 日志目录不存在！")
+        latest_log_path = self.log_manager.get_latest_log_path()
+        print(f"💡 获取日志路径: {latest_log_path}")
+        if not os.path.exists(latest_log_path):
+            QMessageBox.warning(self, "提示", "未找到日志文件！")
             return
 
         try:
-            if platform.system() == "Windows":
-                os.startfile(logs_path)
-            elif platform.system() == "Darwin":
-                subprocess.Popen(["open", logs_path])
-            else:
-                subprocess.Popen(["xdg-open", logs_path])
-            print("✅ 已尝试打开日志目录。")
+            self.log_viewer = LogViewerWindow(latest_log_path)
+            self.log_viewer.show()
+            print("✅ 日志窗口成功弹出")
         except Exception as e:
-            QMessageBox.warning(self, "错误", f"无法打开日志文件夹：{str(e)}")
-            print("❌ 打开文件夹失败：", str(e))
+            print("❌ 弹出失败:", e)
 
     def close_app(self):
         """ 退出应用 """
