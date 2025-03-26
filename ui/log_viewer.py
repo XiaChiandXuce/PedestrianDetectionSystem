@@ -86,6 +86,17 @@ class LogViewerWindow(QWidget):
         pagination_layout.addWidget(self.next_btn)
         layout.addLayout(pagination_layout)
 
+        # 统计标签
+        self.today_alert_label = QLabel("📈 今日报警次数：0 次")
+        self.total_alert_label = QLabel("📊 总报警次数：0 次")
+
+        # 放在一个水平布局里
+        stats_layout = QHBoxLayout()
+        stats_layout.addWidget(self.today_alert_label)
+        stats_layout.addWidget(self.total_alert_label)
+
+        layout.addLayout(stats_layout)
+
         self.setLayout(layout)
 
         # 加载日志
@@ -114,6 +125,8 @@ class LogViewerWindow(QWidget):
         print(f"📌 表头字段: {self.headers}")
         for i in range(min(3, len(self.csv_data))):  # 只打印前3行日志内容看看结构
             print(f"📄 第 {i + 1} 行数据: {self.csv_data[i]}")
+
+        self.update_alert_stats()
 
     def update_table(self):
         self.table.clearContents()  # ✅ 放在这里，清除旧内容
@@ -179,6 +192,8 @@ class LogViewerWindow(QWidget):
         self.total_pages = max(1, (len(self.filtered_data) + self.rows_per_page - 1) // self.rows_per_page)
         self.update_table()
 
+        self.update_alert_stats()
+
     def apply_date_filter(self):
         try:
             time_index = self.headers.index("时间")  # 日志的时间字段列名
@@ -200,7 +215,27 @@ class LogViewerWindow(QWidget):
         self.total_pages = max(1, (len(self.filtered_data) + self.rows_per_page - 1) // self.rows_per_page)
         self.update_table()
 
+        self.update_alert_stats()
 
+    def update_alert_stats(self):
+        try:
+            event_index = self.headers.index("事件类型")
+            time_index = self.headers.index("时间")
+        except ValueError:
+            return
+
+        today = QDate.currentDate().toString("yyyy-MM-dd")
+        total = 0
+        today_count = 0
+
+        for row in self.filtered_data:
+            if row[event_index] == "报警":
+                total += 1
+                if row[time_index].startswith(today):
+                    today_count += 1
+
+        self.total_alert_label.setText(f"📊 总报警次数：{total} 次")
+        self.today_alert_label.setText(f"📈 今日报警次数：{today_count} 次")
 
 
 
