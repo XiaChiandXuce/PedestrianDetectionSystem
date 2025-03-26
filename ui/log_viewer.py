@@ -5,6 +5,10 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QHBoxLayout
 )
 from PyQt6.QtWidgets import QComboBox  # ← 顶部 import 加上这个
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QDateEdit
+from PyQt6.QtCore import QDate
+
 
 class LogViewerWindow(QWidget):
     def __init__(self, csv_path):
@@ -17,6 +21,23 @@ class LogViewerWindow(QWidget):
         self.filter_box = QComboBox()
         self.filter_box.addItems(["全部", "检测记录", "报警记录"])
         self.filter_box.currentIndexChanged.connect(self.apply_filter)
+
+        # 搜索框
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 输入关键词搜索日志")
+        self.search_input.textChanged.connect(self.apply_filter)  # 实时触发过滤
+
+        # 时间范围筛选
+        self.start_date_edit = QDateEdit()
+        self.end_date_edit = QDateEdit()
+        self.start_date_edit.setCalendarPopup(True)
+        self.end_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDate(QDate.currentDate())
+        self.end_date_edit.setDate(QDate.currentDate())
+
+        # 筛选按钮
+        self.date_filter_btn = QPushButton("📆 时间筛选")
+        self.date_filter_btn.clicked.connect(self.apply_date_filter)
 
         self.table = QTableWidget(self)
 
@@ -42,6 +63,18 @@ class LogViewerWindow(QWidget):
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(self.filter_label)
         filter_layout.addWidget(self.filter_box)
+
+        filter_layout.addWidget(QLabel("关键词搜索:"))
+        filter_layout.addWidget(self.search_input)
+
+        # 日期筛选布局
+        date_layout = QHBoxLayout()
+        date_layout.addWidget(QLabel("起始日期:"))
+        date_layout.addWidget(self.start_date_edit)
+        date_layout.addWidget(QLabel("结束日期:"))
+        date_layout.addWidget(self.end_date_edit)
+        date_layout.addWidget(self.date_filter_btn)
+        layout.addLayout(date_layout)
 
         layout.addLayout(filter_layout)  # 添加到主 layout
 
@@ -113,27 +146,61 @@ class LogViewerWindow(QWidget):
             self.update_table()
 
     def apply_filter(self):
-        self.table.clearContents()  # ← 每次刷新页面都清空原有内容
+        self.table.clearContents()  # 清空旧内容
 
         filter_text = self.filter_box.currentText()
+        keyword = self.search_input.text().lower().strip()
+
         try:
-            event_index = self.headers.index("事件类型")  # ← 修正字段名
+            event_index = self.headers.index("事件类型")
         except ValueError:
             QMessageBox.warning(self, "错误", "日志文件中未找到 ‘事件类型’ 字段")
             return
 
+        # 第一步：事件类型筛选
         if filter_text == "全部":
-            self.filtered_data = self.csv_data
+            temp_data = self.csv_data
         elif filter_text == "检测记录":
-            self.filtered_data = [row for row in self.csv_data if row[event_index] == "检测"]
+            temp_data = [row for row in self.csv_data if row[event_index] == "检测"]
         elif filter_text == "报警记录":
-            self.filtered_data = [row for row in self.csv_data if row[event_index] == "报警"]
+            temp_data = [row for row in self.csv_data if row[event_index] == "报警"]
         else:
-            self.filtered_data = self.csv_data
+            temp_data = self.csv_data
 
+        # 第二步：关键词搜索（模糊匹配所有字段）
+        if keyword:
+            temp_data = [
+                row for row in temp_data
+                if any(keyword in str(cell).lower() for cell in row)
+            ]
+
+        self.filtered_data = temp_data
         self.current_page = 1
         self.total_pages = max(1, (len(self.filtered_data) + self.rows_per_page - 1) // self.rows_per_page)
-        self.table.clearContents()  # ← 切页/筛选前清空旧数据
         self.update_table()
+
+    def apply_date_filter(self):
+        try:
+            time_index = self.headers.index("时间")  # 日志的时间字段列名
+        except ValueError:
+            QMessageBox.warning(self, "错误", "日志文件中未找到 '时间' 字段")
+            return
+
+        start_date = self.start_date_edit.date().toString("yyyy-MM-dd")
+        end_date = self.end_date_edit.date().toString("yyyy-MM-dd")
+
+        filtered = []
+        for row in self.csv_data:
+            row_date = row[time_index][:10]  # 截取前10位日期，如 2025-03-26
+            if start_date <= row_date <= end_date:
+                filtered.append(row)
+
+        self.filtered_data = filtered
+        self.current_page = 1
+        self.total_pages = max(1, (len(self.filtered_data) + self.rows_per_page - 1) // self.rows_per_page)
+        self.update_table()
+
+
+
 
 
