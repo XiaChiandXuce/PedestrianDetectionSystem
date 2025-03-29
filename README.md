@@ -56,6 +56,7 @@ pedestrian_detection_system/
 │   ├── architecture.md     # 系统架构设计
 │   ├── database.md         # 数据存储方案
 │   ├── yolo_optimization.md # YOLOv8 调优记录
+│   └── 更新日志.md          # 更新日志于3.29日添加
 │
 ├── requirements.txt        # 🔗 依赖库
 └── README.md               # 📌 项目说明文档
