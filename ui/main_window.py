@@ -11,6 +11,8 @@ from managers.sound_manager import SoundManager
 from managers.alert_manager import AlertManager
 from managers.log_manager import LogManager
 from ui.log_viewer import LogViewerWindow
+from PyQt6.QtCore import QTimer  # 记得顶部 import
+from PyQt6.QtCore import pyqtSignal
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout,
@@ -36,50 +38,77 @@ class VideoThread(QThread):
         self.video_source = source
 
     def run(self):
-        self.cap = cv2.VideoCapture(self.video_source)  # 打开摄像头或视频
-        while self.running:
-            ret, frame = self.cap.read()
-            if not ret:
-                if isinstance(self.video_source, str):  # 如果是视频文件，回到开头
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
-                else:
-                    break
+        self.cap = cv2.VideoCapture(self.video_source)
 
-            # 🎯 1. 调用检测器
-            detections = self.detector.detect(frame)
+        # Step 1：确保视频成功打开
+        if not self.cap.isOpened():
+            print("❌ 视频无法打开！")
+            return
 
-            # 🎯 2. 画框
-            for det in detections:
-                x1, y1, x2, y2 = map(int, det["bbox"])
-                conf = det["conf"]
-                label = f"{det['class_name']} {conf:.2f}"
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        print("🎥 视频流开始读取...")
 
-            # 🎯 3. 转为 QImage 发送
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = frame_rgb.shape
-            qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
+        try:
+            while self.running and self.cap is not None and self.cap.isOpened():
+                ret, frame = self.cap.read()
 
-            self.frame_update.emit(qimg)
-            self.detection_result.emit(detections)  # 👈 发送检测
+                # Step 2：读取失败就跳过
+                if not ret or frame is None or frame.size == 0:
+                    print("⚠️ 读取空帧，跳过...")
+                    if isinstance(self.video_source, str):  # 是本地视频
+                        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 回到首帧
+                        continue
+                    else:
+                        break
+
+                # Step 3：检测
+                detections = self.detector.detect(frame)
+
+                # Step 4：画框
+                for det in detections:
+                    x1, y1, x2, y2 = map(int, det["bbox"])
+                    conf = det["conf"]
+                    label = f"{det['class_name']} {conf:.2f}"
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+                # Step 5：转换成 QImage（必须防止 frame 为 None）
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = frame_rgb.shape
+
+                qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format.Format_RGB888).copy()
+
+                self.frame_update.emit(qimg)
+                self.detection_result.emit(detections)
+
+        except Exception as e:
+            print(f"❌ 视频线程异常: {e}")
+
+
+        finally:
+            if self.cap:
+                self.cap.release()
+                self.cap = None  # 防止外部再误用
+                print("📤 视频资源已释放")
 
     def stop(self):
-        self.running = False
-        self.quit()
-        self.wait()
-        if self.cap:
-            self.cap.release()
+        print("🛑 正在停止视频线程...")
+        self.running = False  # 告诉 run() 循环退出
+        self.wait()  # 等待线程自然结束
+        print("✅ 视频线程已安全退出")
 
 
 class PedestrianDetectionUI(QWidget):
+
+    trigger_alert_signal = pyqtSignal(list)  # ✅ 新增：主线程中触发报警
     def __init__(self):
         super().__init__()
         self.initUI()
         self.video_thread = VideoThread()
         self.video_thread.frame_update.connect(self.update_video_frame)
         self.video_thread.detection_result.connect(self.update_detection_table)
+
+        self.trigger_alert_signal.connect(self.trigger_alert)  # ✅ 信号连接 trigger_alert
+
 
 
         self.sound_manager = SoundManager()  # ✅ 初始化声音模块
@@ -177,11 +206,12 @@ class PedestrianDetectionUI(QWidget):
 
         # 🚨 添加条件触发预警（行人数量 ≥ 2 或 有人置信度 ≥ 0.8）
         if len(detections) >= 2 or any(det['conf'] >= 0.8 for det in detections):
-            self.trigger_alert(detections)  # 👈 接下来我们改这部分
+            self.trigger_alert_signal.emit(detections)  # ✅ 发出信号，由主线程安全触发
 
-    def trigger_alert(self,detections):
+    def trigger_alert(self, detections):
         if not self.alert_shown:
             self.alert_shown = True
+
             self.sound_manager.play_alert()  # ✅ 播放声音
             self.alert_manager.show_warning("⚠️ 安全预警", "检测到多人或高风险目标！请注意安全！")
 
@@ -189,6 +219,13 @@ class PedestrianDetectionUI(QWidget):
             if detections:
                 top_det = max(detections, key=lambda d: d["conf"])
                 self.log_manager.log_alert(top_det["bbox"], top_det["conf"], top_det["class_name"])
+
+            # ⏱ 设置 5 秒后自动解锁
+            QTimer.singleShot(5000, self.reset_alert_flag)
+
+    def reset_alert_flag(self):
+        self.alert_shown = False
+        print("🟢 警报冷却结束，可以再次触发")
 
     def load_video(self):
         """ 选择本地视频文件作为输入 """
