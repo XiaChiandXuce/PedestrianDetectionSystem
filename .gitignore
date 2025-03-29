@@ -55,7 +55,7 @@ ENV/
 data/test_images/
 data/test_videos/
 models/yolo_weights/
-logs/       # ✅ 加上这一行，忽略日志目录
+
 
 # System files
 .DS_Store
