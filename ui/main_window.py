@@ -13,6 +13,10 @@ from managers.log_manager import LogManager
 from ui.log_viewer import LogViewerWindow
 from PyQt6.QtCore import QTimer  # 记得顶部 import
 from PyQt6.QtCore import pyqtSignal
+from detection.collision_checker import CollisionChecker  # ✅ 加入碰撞检测模块
+
+
+
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout,
@@ -115,6 +119,9 @@ class PedestrianDetectionUI(QWidget):
         self.alert_manager = AlertManager(self)  # ✅ 注入当前窗口引用
         self.log_manager = LogManager()  # ✅ 初始化日志模块
 
+        # 添加这一行：
+        self.collision_checker = CollisionChecker(distance_threshold=200)  # 默认阈值 50，可调
+
         # 控制警报只弹一次（冷却机制）
         self.alert_shown = False
 
@@ -155,6 +162,18 @@ class PedestrianDetectionUI(QWidget):
         slider_layout.addWidget(self.confidence_slider)
         slider_layout.addWidget(self.confidence_slider_label)
 
+        # 👉 添加碰撞阈值滑块
+        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setMinimum(10)
+        self.threshold_slider.setMaximum(300)
+        self.threshold_slider.setValue(200)  # 默认值，建议和初始化 collision_checker 的值一致
+        self.threshold_slider_label = QLabel("碰撞阈值: 200 像素")
+
+        threshold_layout = QHBoxLayout()
+        threshold_layout.addWidget(QLabel("碰撞阈值:"))
+        threshold_layout.addWidget(self.threshold_slider)
+        threshold_layout.addWidget(self.threshold_slider_label)
+
         self.confidence_slider.valueChanged.connect(self.update_confidence_label)
 
         # 4. 检测结果表
@@ -174,7 +193,9 @@ class PedestrianDetectionUI(QWidget):
         layout.addLayout(slider_layout)
         layout.addWidget(self.result_table)
         layout.addWidget(self.status_bar)
+        layout.addLayout(threshold_layout)  # ✅ 把阈值滑块加入主界面布局
 
+        self.threshold_slider.valueChanged.connect(self.update_threshold_label)
         self.setLayout(layout)
 
         # 绑定按钮事件
@@ -193,6 +214,12 @@ class PedestrianDetectionUI(QWidget):
         self.confidence_slider_label.setText(f"置信度: {value:.2f}")
         self.video_thread.detector.set_conf_threshold(value)  # 👈 实时更新检测器阈值
 
+    def update_threshold_label(self):
+        value = self.threshold_slider.value()
+        self.threshold_slider_label.setText(f"碰撞阈值: {value} 像素")
+        self.collision_checker.threshold = value  # ✅ 实时同步到碰撞检测模块
+        print(f"📏 实时更新碰撞阈值为：{value} 像素")
+
     def update_detection_table(self, detections):
         self.result_table.setRowCount(len(detections))  # 根据检测数调整行数
         for i, det in enumerate(detections):
@@ -204,9 +231,23 @@ class PedestrianDetectionUI(QWidget):
             # ✅ 日志记录：每一次检测
             self.log_manager.log_detection(det["bbox"], det["conf"], det["class_name"])
 
-        # 🚨 添加条件触发预警（行人数量 ≥ 2 或 有人置信度 ≥ 0.8）
-        if len(detections) >= 2 or any(det['conf'] >= 0.8 for det in detections):
-            self.trigger_alert_signal.emit(detections)  # ✅ 发出信号，由主线程安全触发
+
+        # 🚨 条件 1：碰撞预警（人车距离过近）
+        # 分离出行人与车辆（class_id: 0 = person, 2/5/7 = car/bus/truck）
+        pedestrians = [d for d in detections if d.get("class_id") == 0]
+        vehicles = [d for d in detections if d.get("class_id") in [2, 5, 7]]
+
+        # ⚠️ 判断人车是否有可能碰撞（像素距离小于阈值）
+        # ✅ 正确写法（使用 self.collision_checker）：
+        collision_risk = self.collision_checker.check(pedestrians, vehicles)
+
+        # ✅ 新触发逻辑：只有在存在碰撞风险时，才发出预警
+        if collision_risk:
+            print("⚠️⚠️⚠️ 人车接近，触发预警！")
+            self.trigger_alert_signal.emit(detections)
+
+        # ✅ 未来这里将是碰撞预警主逻辑入口
+        # print(f"🚶 行人数量: {len(pedestrians)}，🚗 车辆数量: {len(vehicles)}")
 
     def trigger_alert(self, detections):
         if not self.alert_shown:
@@ -218,7 +259,19 @@ class PedestrianDetectionUI(QWidget):
             # ✅ 日志记录：取置信度最高的一个报警
             if detections:
                 top_det = max(detections, key=lambda d: d["conf"])
-                self.log_manager.log_alert(top_det["bbox"], top_det["conf"], top_det["class_name"])
+
+                # 🚶‍♀️ 抽取行人与车辆
+                pedestrians = [d for d in detections if d.get("class_id") == 0]
+                vehicles = [d for d in detections if d.get("class_id") in [2, 5, 7]]
+
+                # 🧠 判断报警类型
+                if self.collision_checker.check(pedestrians, vehicles):
+                    event_type = "碰撞预警"
+                else:
+                    event_type = top_det["class_name"]
+
+                # ✅ 日志记录
+                self.log_manager.log_alert(top_det["bbox"], top_det["conf"], event_type)
 
             # ⏱ 设置 5 秒后自动解锁
             QTimer.singleShot(5000, self.reset_alert_flag)
