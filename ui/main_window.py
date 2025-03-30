@@ -140,6 +140,7 @@ class PedestrianDetectionUI(QWidget):
         self.start_detection_btn = QPushButton("启动检测")
         self.pause_detection_btn = QPushButton("暂停检测")
         self.view_logs_btn = QPushButton("查看日志")
+        self.view_statistics_btn = QPushButton("查看统计图")  # 新增
         self.exit_btn = QPushButton("退出")
 
         button_layout = QHBoxLayout()
@@ -148,6 +149,7 @@ class PedestrianDetectionUI(QWidget):
         button_layout.addWidget(self.start_detection_btn)
         button_layout.addWidget(self.pause_detection_btn)
         button_layout.addWidget(self.view_logs_btn)  # ✅ 新增
+        button_layout.addWidget(self.view_statistics_btn)  # 新增
         button_layout.addWidget(self.exit_btn)
 
         # 3. 参数调节
@@ -204,6 +206,7 @@ class PedestrianDetectionUI(QWidget):
         self.start_detection_btn.clicked.connect(self.start_detection)
         self.pause_detection_btn.clicked.connect(self.pause_detection)
         self.view_logs_btn.clicked.connect(self.view_logs)  # ✅ 新增
+        self.view_statistics_btn.clicked.connect(self.view_statistics)
         self.exit_btn.clicked.connect(self.close_app)
 
     def update_video_frame(self, img):
@@ -318,6 +321,11 @@ class PedestrianDetectionUI(QWidget):
             print("✅ 日志窗口成功弹出")
         except Exception as e:
             print("❌ 弹出失败:", e)
+
+    def view_statistics(self):
+        from ui.log_statistics_window import LogStatisticsWindow
+        self.statistics_window = LogStatisticsWindow()
+        self.statistics_window.show()
 
     def close_app(self):
         """ 退出应用 """

@@ -25,7 +25,8 @@ pedestrian_detection_system/
 │   ├── layout/            # 存放 .ui 文件
 │   │    ├── main_window.ui  # 主窗口 UI
 │   ├── main_window.py      # PyQt6 交互逻辑
-│   └── log_viewer.py       # 📖 日志查看窗口
+│   │── log_viewer.py       # 📖 日志查看窗口
+│   └── log_statistics_window.py  # 📊 日志趋势分析窗口（新增）
 │
 ├── managers/
 │   ├── sound_manager.py          # 所有声音控制逻辑
@@ -95,6 +96,15 @@ pedestrian_detection_system/
 - 🎯 功能：实时计算**行人与车辆**之间的中心点距离  
 - 📏 **阈值可调**：通过 GUI 滑块调整距离阈值  
 - ⚠️ **触发逻辑**：一旦距离小于阈值，立即 **触发声音报警 + 日志记录**
+- 
+### 📊 报警趋势统计（更新）
+
+- 📦 模块文件：`ui/log_statistics_window.py`
+- 📈 折线图展示 **每分钟报警次数**
+- 🔄 自动读取 `logs/` 目录下最新的日志文件，进行分钟级聚合分析
+- ✅ 图表支持中文字体，防止乱码问题（如“报警次数”、“时间”等）
+- 🖼️ 实现基于 `matplotlib` + `PyQt6` 的嵌入式图形展示
+
 
 ### ✅ 日志记录功能  
 - 每帧检测信息与每次预警事件都会自动保存  
