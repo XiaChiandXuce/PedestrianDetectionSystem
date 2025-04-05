@@ -1,4 +1,5 @@
 # detector.py
+import os
 from ultralytics import YOLO
 import numpy as np
 
@@ -9,6 +10,13 @@ class YOLOv8Detector:
         :param model_path: 模型权重路径
         :param conf_threshold: 置信度阈值
         """
+
+        # ✅ 自动定位到项目根目录（当前文件的上两级）
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        abs_model_path = os.path.join(project_root, model_path)
+
+        print(f"[YOLOv8Detector] ✅ 加载模型路径: {abs_model_path}")  # 可选调试用
+
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
 

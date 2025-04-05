@@ -7,6 +7,7 @@ from PyQt6.QtCore import QDateTime
 from PyQt6.QtWidgets import QMessageBox  # 👈 加到顶部 if 没有
 from PyQt6.QtMultimedia import QSoundEffect
 from PyQt6.QtCore import QUrl
+from PyQt6.QtWidgets import QComboBox  # ✅ 添加模型选择下拉框组件
 from managers.sound_manager import SoundManager
 from managers.alert_manager import AlertManager
 from managers.log_manager import LogManager
@@ -141,6 +142,12 @@ class PedestrianDetectionUI(QWidget):
         self.pause_detection_btn = QPushButton("暂停检测")
         self.view_logs_btn = QPushButton("查看日志")
         self.view_statistics_btn = QPushButton("查看统计图")  # 新增
+        # ✅ 模型选择下拉框：yolov8n.pt vs merged_model.pt
+        self.model_selector = QComboBox()
+        self.model_selector.addItems([
+            "原始模型 yolov8n.pt",
+            "融合模型 merged_model.pt"
+        ])
         self.exit_btn = QPushButton("退出")
 
         button_layout = QHBoxLayout()
@@ -150,6 +157,7 @@ class PedestrianDetectionUI(QWidget):
         button_layout.addWidget(self.pause_detection_btn)
         button_layout.addWidget(self.view_logs_btn)  # ✅ 新增
         button_layout.addWidget(self.view_statistics_btn)  # 新增
+        button_layout.addWidget(self.model_selector)
         button_layout.addWidget(self.exit_btn)
 
         # 3. 参数调节
@@ -296,11 +304,23 @@ class PedestrianDetectionUI(QWidget):
         self.status_bar.showMessage("已切换至摄像头模式")
 
     def start_detection(self):
-        """ 启动视频流（摄像头 / 视频） """
         if not self.video_thread.isRunning():
+            # ✅ 获取用户选择的模型
+            selected_model = self.model_selector.currentText()
+            if "融合" in selected_model:
+                model_path = "models/yolo_weights/merged_model.pt"
+            else:
+                model_path = "models/yolo_weights/yolov8n.pt"
+
+            # ✅ 实时更新 VideoThread 中的模型
+            self.video_thread.detector = YOLOv8Detector(
+                model_path=model_path,
+                conf_threshold=self.confidence_slider.value() / 100.0
+            )
+
             self.video_thread.running = True
             self.video_thread.start()
-            self.status_bar.showMessage("行人检测已启动...")
+            self.status_bar.showMessage(f"✅ 使用模型：{selected_model}，检测已启动...")
 
     def pause_detection(self):
         """ 暂停检测 """
