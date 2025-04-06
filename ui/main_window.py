@@ -126,6 +126,10 @@ class PedestrianDetectionUI(QWidget):
         # 控制警报只弹一次（冷却机制）
         self.alert_shown = False
 
+        # ✅ 控制台提示当前模型路径和类别映射
+        print(f"[UI初始化] ✅ 当前使用模型路径: {self.video_thread.detector.model.model.args['model']}")
+        print(f"[UI初始化] ✅ 当前模型类别映射: {self.video_thread.detector.class_names}")
+
     def initUI(self):
         self.setWindowTitle("基于深度学习的行人检测系统")
         self.setGeometry(100, 100, 900, 600)
