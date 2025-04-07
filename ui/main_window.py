@@ -15,6 +15,9 @@ from ui.log_viewer import LogViewerWindow
 from PyQt6.QtCore import QTimer  # 记得顶部 import
 from PyQt6.QtCore import pyqtSignal
 from detection.collision_checker import CollisionChecker  # ✅ 加入碰撞检测模块
+from detection.detector import YOLOv8Detector, YOLOv8PoseDetector
+from utils.config import KEYPOINT_COLOR
+
 
 
 
@@ -36,6 +39,7 @@ class VideoThread(QThread):
         self.cap = None
         self.running = False
         self.video_source = 0  # 默认使用摄像头
+        self.video_writer = None  # 🎥 视频写入器
         self.detector = YOLOv8Detector(model_path="models/yolo_weights/yolov8n.pt", conf_threshold=0.5)
 
     def set_video_source(self, source):
@@ -50,7 +54,15 @@ class VideoThread(QThread):
             print("❌ 视频无法打开！")
             return
 
+        # 🎥 设置视频保存参数（确保放在 cap 成功打开之后）
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.video_writer = cv2.VideoWriter("output_pose.mp4", fourcc, fps, (width, height))
+
         print("🎥 视频流开始读取...")
+        print(f"🎯 当前检测器类型: {type(self.detector).__name__}")
 
         try:
             while self.running and self.cap is not None and self.cap.isOpened():
@@ -66,9 +78,12 @@ class VideoThread(QThread):
                         break
 
                 # Step 3：检测
-                detections = self.detector.detect(frame)
+                if isinstance(self.detector, YOLOv8PoseDetector):
+                    detections, keypoints_all = self.detector.detect(frame)
+                else:
+                    detections = self.detector.detect(frame)
 
-                # Step 4：画框
+                # Step 4：画框 & 画关键点（如果有）
                 for det in detections:
                     x1, y1, x2, y2 = map(int, det["bbox"])
                     conf = det["conf"]
@@ -76,11 +91,18 @@ class VideoThread(QThread):
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
+                # ✅ 如果是姿态模型，画关键点骨架
+                if isinstance(self.detector,YOLOv8PoseDetector) and keypoints_all is not None and keypoints_all.size > 0:
+                    self.draw_keypoints(frame, keypoints_all)
+
                 # Step 5：转换成 QImage（必须防止 frame 为 None）
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = frame_rgb.shape
 
                 qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format.Format_RGB888).copy()
+
+                if self.video_writer:
+                    self.video_writer.write(frame)
 
                 self.frame_update.emit(qimg)
                 self.detection_result.emit(detections)
@@ -92,8 +114,37 @@ class VideoThread(QThread):
         finally:
             if self.cap:
                 self.cap.release()
+            if self.video_writer:
+                self.video_writer.release()
+                self.video_writer = None  # 清理
                 self.cap = None  # 防止外部再误用
                 print("📤 视频资源已释放")
+
+    def draw_keypoints(self, frame, keypoints_all):
+        SKELETON = [
+            (5, 7), (7, 9), (6, 8), (8, 10),
+            (11, 13), (13, 15), (12, 14), (14, 16),
+            (5, 6), (11, 12), (5, 11), (6, 12)
+        ]
+
+        for keypoints in keypoints_all:
+            keypoints = keypoints.tolist()  # ✅ numpy 转 list 更安全
+
+        for keypoints in keypoints_all:
+            # ✅ 画关键点
+            for keypoints in keypoints_all:
+                keypoints = keypoints.tolist()  # 保证 keypoints 是 list 而不是 numpy
+                for point in keypoints:
+                    if len(point) >= 2:
+                        x, y = point[:2]
+                        cv2.circle(frame, (int(x), int(y)), 3, KEYPOINT_COLOR, -1)
+
+            # ✅ 画骨架连接线
+            for i, j in SKELETON:
+                if i < len(keypoints) and j < len(keypoints):
+                    pt1 = tuple(map(int, keypoints[i][:2]))
+                    pt2 = tuple(map(int, keypoints[j][:2]))
+                    cv2.line(frame, pt1, pt2, (255, 0, 0), 2)
 
     def stop(self):
         print("🛑 正在停止视频线程...")
@@ -150,7 +201,8 @@ class PedestrianDetectionUI(QWidget):
         self.model_selector = QComboBox()
         self.model_selector.addItems([
             "原始模型 yolov8n.pt",
-            "融合模型 merged_model.pt"
+            "融合模型 merged_model.pt",
+            "姿态模型 yolov8x-pose-p6.pt"  # ✅ 新增
         ])
         self.exit_btn = QPushButton("退出")
 
@@ -309,15 +361,24 @@ class PedestrianDetectionUI(QWidget):
 
     def start_detection(self):
         if not self.video_thread.isRunning():
-            # ✅ 获取用户选择的模型
             selected_model = self.model_selector.currentText()
+
+            # 1. 决定模型路径
             if "融合" in selected_model:
                 model_path = "models/yolo_weights/merged_model.pt"
+            elif "姿态" in selected_model:
+                model_path = "models/yolo_weights/yolov8x-pose-p6.pt"
             else:
                 model_path = "models/yolo_weights/yolov8n.pt"
 
-            # ✅ 实时更新 VideoThread 中的模型
-            self.video_thread.detector = YOLOv8Detector(
+            # 2. 决定使用哪个类
+            if "姿态" in selected_model:
+                DetectorClass = YOLOv8PoseDetector
+            else:
+                DetectorClass = YOLOv8Detector
+
+            # ✅ 只写一次实例化！
+            self.video_thread.detector = DetectorClass(
                 model_path=model_path,
                 conf_threshold=self.confidence_slider.value() / 100.0
             )
